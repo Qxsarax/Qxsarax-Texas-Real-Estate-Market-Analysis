@@ -1,0 +1,382 @@
+---
+title: "Texas Real Estate Market Analysis"
+output: html_document
+author: "Sara Greco"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=F}
+library(ggplot2)
+library(moments)
+library(tidyverse)
+library(knitr)
+```
+
+1. Variable analysis
+
+- import the dataset
+```{r}
+getwd()
+setwd("C:/Users/PC/Desktop")
+dati = read.csv('realestate_texas.csv', sep=',') 
+
+dim(dati)
+N=dim(dati)[1]
+attach(dati)
+
+```
+
+the dataset is composed of 240 objects and 8 variables
+
+- city: nominal qualitative variable;
+
+- year: ordinal qualitative variable;
+
+- month: nominal qualitative variable (cyclic);
+
+- sales: discrete quantitative variable;
+
+- volume: continuous quantitative variable;
+
+- median_price: continuous quantitative variable;
+
+- listings: discrete quantitative variable;
+
+- months_inventory: continuous quantitative variable;
+
+
+
+2. Position, variability and shape indices:
+- mode: variable with four modes, all with an absolute frequency of 60.
+```{r}
+moda = table(city)
+kable(moda)
+```
+city has a four-modal distribution.
+
+Frequency distribution: year and month:
+
+- year
+```{r}
+freq_ass_y = table(year) # Absolute frequency: 48 for each year.
+freq_rel_y = table(year)/N # Relative frequency: 0.2 (20%) for each year.
+distr_freq_year = cbind(freq_ass_y,freq_rel_y)
+kable(distr_freq_year)
+```
+
+- month: this variable is equally distributed and occurs 20 times in the dataset each month
+```{r}
+freq_ass_m = table(month) 
+freq_rel_m = table(month)/N 
+distr_freq_month = round(cbind(freq_ass_m,freq_rel_m),2)
+kable(distr_freq_month)
+```
+
+Calculating indices: I create a function for quantitative variables
+```{r}
+index_calculation = function(x) {
+  c(mean = mean(x),
+    median = median(x),
+    devst = sd(x),
+    min = min(x),
+    max = max(x),
+    Q1 = quantile(x, 0.25),
+    Q3 = quantile(x, 0.75),
+    IQR = IQR(x),
+    kurtosis = kurtosis(x),
+    skewness = skewness(x)
+  )
+}
+```
+
+I apply the function to the variables and create a dataset 'stat_df' to see the statistics.
+
+```{r}
+var_quant = c('sales', 'volume', 'median_price', 'listings', 'months_inventory')
+stat = sapply(dati[var_quant], index_calculation)
+stat_df = as.data.frame(round(stat,2))
+kable(stat_df)
+```
+
+3. Identifying variables with greater variability and skewness
+
+Coefficient of variation (CV)
+```{r}
+cv = round(sapply(dati[var_quant],
+            function(x){return(sd(x)/mean(x)*100)}),2)
+kable(cv)
+```
+Volume has a higher coefficient of variation than the other variables, with a percentage of 53.71%. Volume has a negative and leptokurtic skewed distribution and a greater asymmetry than the other variables (skewness=88%)
+
+
+4. Creating classes for a quantitative variable
+
+```{r}
+dati$sales_cl = cut(dati$sales,#I used the cut function to split the sales data into specific classes
+               breaks = c(79,150,250,350,423),
+               include.lowest = TRUE, #to include the lower limit of the first class.
+               right = FALSE) # to make the interval closed on the left and open on the right.
+``` 
+
+Calculating frequencies:
+```{r}
+ni = table(dati$sales_cl)
+fi = round((ni/N),2)
+Ni = cumsum(ni)
+Fi = round((Ni/N),2)
+cbind(ni,fi,Ni,Fi)
+``` 
+
+I combined these results into a dataframe that includes all the calculated frequencies.
+```{r}
+distr_freq_sales_cl = as.data.frame((cbind(ni,fi,Ni,Fi)))
+kable(distr_freq_sales_cl)
+``` 
+
+Gini index for distr_freq_sales_cl
+
+```{r}
+gini.index = function(x){
+  ni = table(x)
+  fi = ni/length(x)
+  fi2 = fi^2
+  J= length(table(x))
+  
+  gini = 1-sum(fi2)
+  gini.norm = gini/((J-1)/J)
+  
+  return(gini.norm)
+}
+  
+round(gini.index(distr_freq_sales_cl),2)
+``` 
+G'= 0.75
+indicates a rather unequal distribution between classes
+
+a bar chart showing the distribution of absolute frequencies for each sales class.
+```{r}
+barplot(ni,
+        main = 'frequency distribution',
+        xlab = 'length classes',
+        ylab = 'absolute frequencies',
+        col = 'lightblue')
+``` 
+
+Sales are mainly concentrated in the first two classes: [79,150) and [150,250)
+
+
+Gini index for the city variable
+```{r}
+gini.index(city)
+``` 
+G’ = 1
+Maximum heterogeneity. This happens because the distribution of cities is
+equally divided (each has a relative frequency of 0.25)
+
+
+
+5. Probability calculation
+
+```{r}
+probability_city = sum(dati$city == 'Beaumont')/nrow(dati)
+kable(data.frame("Probability city:" = probability_city))
+``` 
+The probability that the city is "Beaumont" is 25%.
+
+```{r}
+probability_month = round(sum(month == '7')/nrow(dati),3)
+kable(data.frame("Probability month:" = probability_month))
+``` 
+The probability that the month is "7" is 8.3%.
+  
+```{r}
+probability_date = round(sum(dati$month == '12' & dati$year == '2012')/nrow(dati),3)
+kable(data.frame("Probability date:" = probability_date))
+``` 
+The probability that the month is "12" and the year is "2012" is 0.0167 (1.7%).
+
+
+I created a dataframe called 'prob' with the events and probabilities:
+```{r}
+prob = data.frame(
+  Evento = c("Beaumont", "Luglio", "Dicembre 2012"),
+  Probabilità = c(probability_city, probability_month, probability_date)
+)
+``` 
+
+6. Creating new variables
+
+I created a new column that calculates the mean price of properties.
+```{r}
+mean_price_c = mutate(
+  dati,
+  mean_price = round((volume/sales),2)) %>%
+  select(volume,sales,mean_price) %>% head(5)
+
+kable(mean_price_c)
+``` 
+- The mean price decreases as sales increase
+
+
+I created a column that measures the efficiency listings of sales ads.
+```{r}
+efficiency_listings_c = mutate(
+  dati,
+  efficiency_listings = round((sales/listings),2)) %>%
+  select(,sales,listings, efficiency_listings)%>% head(5)
+
+kable(efficiency_listings_c)
+``` 
+- Ad efficiency listings appears to be low, ranging from 5% to 11%.
+ 
+
+7. Conditional analysis
+
+- Statistics by year
+```{r}
+stat_by_year =dati %>%
+  group_by(year) %>%
+  summarise(
+    mean = round((mean(listings, na.rm = TRUE)),2), # Mean sales
+    sd = round((sd(listings, na.rm = TRUE)),2), # Standard deviation of sales.
+    min = min(listings), # Min value of sales.
+    max = max(listings) # Max value of sales.
+  )
+kable(stat_by_year)
+``` 
+- The results show a decline in mean sales from 2010 to 2014, with a more pronounced decline starting in 2013.
+
+Statistics by year, month and city
+```{r}
+stat_tot = dati %>%
+  group_by(city, month, year) %>%
+  summarise(
+    mean_sales = mean(sales, na.rm = TRUE),
+    .groups = 'drop'
+  )
+``` 
+
+VIEWS WITH GGPLOT2
+
+1. Boxplot: Distribution of average house price among cities
+```{r}
+ggplot(dati, aes(x=city,y=median_price))+
+  geom_boxplot(fill="lightblue")+
+  labs(
+    title = 'Distribution of average house price among cities',
+    x = 'city',
+    y= 'median price'
+  ) +
+  theme_light() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face='bold'),
+    axis.title.x = element_text(face = 'italic'),
+    axis.title.y = element_text(face = 'italic')
+  )
+``` 
+
+The boxplot graph shows the median price on the y-axis and the cities on the x-axis. Points outside the boxplot are outliers, which are found in all cities except Tyler. Also, Wichita Falls has a lower median price than other cities.
+
+2. Boxplot: distribution of the total value of sales between the various cities and between the various years
+```{r}
+ggplot(dati, aes(x=factor(year),y=volume, fill = city))+
+  geom_boxplot()+
+  labs(
+    title = 'distribution of the total value of sales between the various cities and between the various years',
+    x = 'year',
+    y= 'total sales',
+    fill = 'city'
+  ) +
+  theme_light() +
+  theme(
+    plot.title = element_text(hjust = 0.5,face='bold'),
+    axis.title.x = element_text(face = 'italic'),
+    axis.title.y = element_text(face = 'italic')
+  )
+``` 
+
+The graph shows the total sales over the years in the 4 cities. For each year, indicated on the x-axis, the total value of sales for each city is represented by a boxplot of a different color. The highest sales seem to occur in the cities of Bryan-College Station and Tyler, especially in the years 2013-2014. For the city of Beaumont there are outliers in 2012.
+
+
+3. Stacked bar chart: distribution of the total value of sales
+```{r}
+ggplot(dati)+
+  geom_bar(aes(x=factor(month),y=volume, fill = city), stat = "identity")+
+  labs(
+    title = 'distribution of the total value of sales',
+    x = 'month',
+    y = 'total sales',
+    fill = 'city'
+  )+
+  theme_light() +
+  theme(
+    plot.title = element_text(hjust = 0.5,face='bold'),
+    axis.title.x = element_text(face = 'italic'),
+    axis.title.y = element_text(face = 'italic')
+  )
+``` 
+
+The graph represents the total sales for each city over the months. The months are shown on the x-axis, while the total sales are shown on the y-axis. The different colors represent the 4 cities.
+From the graph thus obtained we can conclude that greater sales accumulate in the summer months (5,6,7,8), especially for the cities of Bryan College station and Tyler
+
+
+4. Stacked bar chart: normalized distribution of the total value of sales
+```{r}
+
+ggplot(dati)+
+  geom_bar(aes(x=factor(month),y=volume, fill = city), 
+           stat = "identity", position = 'fill')+
+  labs(
+    title = 'normalized distribution of the total value of sales',
+    x = 'month',
+    y = 'total sales'
+  )+
+  theme_light() +
+  theme(
+    plot.title = element_text(hjust = 0.5,face='bold'),
+    axis.title.x = element_text(face = 'italic'),
+    axis.title.y = element_text(face = 'italic')
+  )
+``` 
+
+The normalized graph represents total sales for each city over the months.
+
+5. time series of the total value of sales
+```{r}
+
+date = as.Date(paste(dati$year, dati$month, '01', sep = '-'))
+
+ggplot(dati, aes(x=date, y=sales, color=city))+
+  
+  geom_line(linewidth=1)+
+  geom_point(size=2)+
+  
+  scale_color_discrete(name = "city") +
+  
+  labs(
+    title = 'time series of the total value of sales',
+    x ='date',
+    y = 'total sales'
+  )+
+  scale_x_date(date_breaks = '2 months', 
+               date_labels ='%b',
+               expand= c(0.02, 0.02)
+               )+
+  theme_light()+
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = 'bottom',
+    panel.grid.minor = element_blank(),
+    strip.background = element_rect(fill = 'gray90'),
+    strip.text = element_text(face = 'bold')
+  ) + 
+  facet_wrap(~year, ncol = 3, scales = 'free_x')
+
+```
+
+The line charts show the total sales of the 4 cities over the years (2010-2014). The x-axis shows the months, while the y-axis shows the total sales for each city. Looking at the chart, we can conclude that the city of Tyler, compared to the other cities, has had the most sales since 2010 and continues to grow until 2014. On the contrary, the city with the least sales is Wichita Falls, where total sales remain constant from 2010 to 2014.
+
